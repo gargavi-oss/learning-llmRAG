@@ -140,9 +140,21 @@ export async function generateResponse(prompt: string) {
     messages: [new HumanMessage(prompt)]
 },{configurable:{thread_id:"user12"}});
 
+const checkpoints = [];
+
+for await (const checkpoint of checkPointer.list({
+  configurable: {
+    thread_id: "user12",
+  },
+})) {
+  checkpoints.push(checkpoint);
+}
+
+console.log(checkpoints);
+
 const last = result.messages[result.messages.length - 1];
 
-return result;
+return last.content;
 
 }
 
