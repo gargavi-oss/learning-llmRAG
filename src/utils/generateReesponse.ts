@@ -1,12 +1,20 @@
-import dotenv from "dotenv"
-import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from "@langchain/google-genai"
-import { Annotation, END, GraphNode, MemorySaver, MessagesAnnotation, START, StateGraph } from "@langchain/langgraph";
+import dotenv from "dotenv";
+import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
+import {
+  Annotation,
+  END,
+  GraphNode,
+  MemorySaver,
+  MessagesAnnotation,
+  START,
+  StateGraph,
+} from "@langchain/langgraph";
 import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { TavilySearch } from "@langchain/tavily";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import fs from "fs/promises"
+import fs from "fs/promises";
 import { PDFParse } from "pdf-parse";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { TaskType } from "@google/generative-ai";
@@ -19,11 +27,10 @@ const State = Annotation.Root({
   context: Annotation<string>(),
 });
 
-
 const webSearchTool = new TavilySearch({
   maxResults: 5,
   topic: "general",
-})
+});
 
 const checkPointer = new MemorySaver();
 
@@ -34,40 +41,38 @@ const embeddings = new GoogleGenerativeAIEmbeddings({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
-export async function genrateVectorStore(){
-const vectorStore = await QdrantVectorStore.fromExistingCollection(embeddings, {
-  url: process.env.QDRANT_URL,
-  collectionName: "grocery-store",
-});
+export async function genrateVectorStore() {
+  const vectorStore = await QdrantVectorStore.fromExistingCollection(embeddings, {
+    url: process.env.QDRANT_URL,
+    collectionName: "grocery-store",
+  });
 
-return vectorStore;
+  return vectorStore;
 }
 
-
-
-async function uploadDetails(){
-  const pdfPath = "/Users/avigarg/backendDevelopment/course/level4/FreshMart_Grocery_Catalog_20_Pages.pdf"
-  const buffer= await fs.readFile(pdfPath);
-  const pdfResult =new PDFParse({ data: buffer });
+async function uploadDetails() {
+  const pdfPath =
+    "/Users/avigarg/backendDevelopment/course/level4/FreshMart_Grocery_Catalog_20_Pages.pdf";
+  const buffer = await fs.readFile(pdfPath);
+  const pdfResult = new PDFParse({ data: buffer });
   const result = await pdfResult.getText();
-  const text = result.text
+  const text = result.text;
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize: 1000,
-    chunkOverlap: 100
-  })
-  const docs = await splitter.createDocuments([text])
+    chunkOverlap: 100,
+  });
 
+  const docs = await splitter.createDocuments([text]);
+  // console.log(docs)
   const vectorStore = await genrateVectorStore();
   await vectorStore.addDocuments(docs);
 }
 
 // uploadDetails()
 
-
 export const currentDateTimeTool = tool(
   async () => {
     const now = new Date();
-
     return {
       date: now.toLocaleDateString("en-IN"),
       time: now.toLocaleTimeString("en-IN"),
@@ -129,23 +134,24 @@ export const fileWriteTool = tool(
   }
 );
 
-
-
-const tools:any = [webSearchTool,currentDateTimeTool,calculatorTool,fileReadTool,fileWriteTool]
-const toolNode = new ToolNode(tools)
-
+const tools: any = [
+  webSearchTool,
+  currentDateTimeTool,
+  calculatorTool,
+  fileReadTool,
+  fileWriteTool,
+];
+const toolNode = new ToolNode(tools);
 
 const llm = new ChatGoogleGenerativeAI({
-    model: "gemini-2.5-flash",
-    temperature: 0.8,
-    maxRetries: 2,
-    apiKey: process.env.GEMINI_API_KEY,
-})
+  model: "gemini-2.5-flash",
+  temperature: 0.8,
+  maxRetries: 2,
+  apiKey: process.env.GEMINI_API_KEY,
+});
 const llmWithTools = llm.bindTools(tools);
 const callLLm: GraphNode<typeof State> = async (state) => {
-  const history = state.messages.filter(
-    (message) => !(message instanceof SystemMessage)
-  );
+  const history = state.messages.filter((message) => !(message instanceof SystemMessage));
 
   const aiMsg = await llmWithTools.invoke([
     new SystemMessage(`
@@ -165,10 +171,7 @@ ${state.context}
 function shouldContinue(state: typeof State.State) {
   const lastMessage = state.messages[state.messages.length - 1];
 
-   if (
-    lastMessage instanceof AIMessage &&
-    lastMessage.tool_calls!.length > 0
-  ) {
+  if (lastMessage instanceof AIMessage && lastMessage.tool_calls!.length > 0) {
     return "tools";
   }
 
@@ -181,8 +184,7 @@ const graph = new StateGraph(State)
   .addEdge(START, "llm")
   .addConditionalEdges("llm", shouldContinue)
   .addEdge("tools", "llm")
-  .compile({checkpointer:checkPointer});
-
+  .compile({ checkpointer: checkPointer });
 
 const systemPrompt = `
 You are Jarvis, an AI-powered Grocery Store RAG Assistant created by Avi.
@@ -212,10 +214,7 @@ Remember:
 The provided context is the single source of truth. If it is not in the context, you do not know it.
 `;
 
-export async function generateResponse(
-  context: string,
-  prompt: string
-) {
+export async function generateResponse(context: string, prompt: string) {
   const result = await graph.invoke(
     {
       context,
